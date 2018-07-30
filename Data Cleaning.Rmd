@@ -1,0 +1,97 @@
+---
+title: "Data Cleaning"
+author: "Cathy Huang"
+date: "2018年7月27日"
+output: html_document
+---
+
+由於這些未整理的資料會有缺漏值的問題，因此要進行資料清理。
+
+步驟：
+
+- 使用str_trim()，整理DOI與PMID的欄位，方便進行比對重複文獻。
+- 去除TITLE或ABSTRACT為NA，PMID與DOI皆為NA的文獻。
+- PMID重複的文獻，補上DOI。
+- 依照各文獻的資料完整度，進行文獻排序（PubMed>Medline>Cochrane>Scopus）。
+- 使用slice()的方法，取DOI重複的第一筆文獻。
+
+
+1. 使用plyr、dplyr、stringr、data.table以及tidyverse package進行資料清理。
+```{r, message=FALSE, warning=FALSE }
+require(plyr)
+require(dplyr)
+require(stringr)
+require(data.table)
+require(tidyverse)
+```
+
+2. 讀取檔案，並整合各來源的文獻。
+```{r, warning=FALSE}
+#讀取檔案
+pubmed_data <- readRDS("C:/Users/User/Documents/pubmed_data.rds")
+scopus <- readRDS("C:/Users/User/Documents/scopus.rds")
+medline <- readRDS("C:/Users/User/Documents/medline.rds")
+Cochrane_data <- readRDS("C:/Users/User/Documents/Cochrane_data.rds")
+
+#整合文獻
+paper_ps <- rbind(pubmed_data,scopus)
+paper_psm <- rbind(paper_ps,medline)
+paper_psmc <- rbind(paper_psm,Cochrane_data)
+```
+
+3. 刪除資料缺漏，不適用Abstract Sceening的文獻。
+```{r, warning=FALSE}
+#str_trim()去除DOI、PMID欄位值的前後空白
+paper_psmc$DOI<- str_trim(paper_psmc$DOI) 
+paper_psmc$PMID<- str_trim(paper_psmc$PMID)
+
+#去除PMID或DOI皆為NA的文獻
+paper_No2NA <- paper_psmc %>% filter(DOI !="<NA>" | PMID !="<NA>")
+
+#整理DOI與PMID欄位的值
+paper_No2NA$DOI <- tolower(paper_No2NA$DOI) #DOI一律小寫
+
+# 刪除特定文獻
+paper_No2NA <- paper_No2NA %>% filter(!(TITLE=="Reply")) #Reply文獻
+paper_No2NA <- paper_No2NA %>% filter(!(PMID=="29669772" & DOI =="bcr-2018-224334")) #DOI值部分缺漏
+paper_No2NA <- paper_No2NA %>% filter(!(PMID=="29113868" & DOI =="s1553-8389(17)30160-4")) #PubMed來源的DOI值錯誤
+paper_No2NA <- paper_No2NA %>% filter(!(PMID=="28260935" & SOURCE =="PubMed")) #PMID重複，此筆無ABSTRACT
+
+#刪除無TITLE與ABSTRACT的文獻
+test_na <- paper_No2NA %>% filter(TITLE =="" | ABSTRACT =="" | ABSTRACT =="[無可用摘要]" ) 
+paper_No2NA$CantScreen <- ifelse (paper_No2NA$TITLE %in% test_na$TITLE,1,0) 
+paper_No2NA <- filter(paper_No2NA, CantScreen == "0")
+paper_No2NA$CantScreen <- NULL 
+
+```
+
+4. 使用tidyverse package，將PMID重複的文獻，補上闕漏的DOI值。
+```{r, warning=FALSE}
+#PMID重複的文獻，補上DOI
+paper_replace <- paper_No2NA %>% 
+  group_by(PMID) %>% 
+  fill(DOI) %>% 
+  fill(DOI, .direction = "up")
+
+#DOI重複的文獻，補上PMID
+paper_replace <- paper_replace %>% 
+  group_by(DOI) %>% 
+  fill(PMID) %>% 
+  fill(PMID, .direction = "up")
+```
+
+
+5. 依照各文獻的資料完整度，進行文獻排序。
+```{r, warning=FALSE}
+#有NA值的文獻，na欄位為1，rowsums()計算資料完整度
+paper_replace$na <- rowSums(is.na(paper_replace))  
+paper_replace$na <- NULL
+
+#使用factor()排序文獻
+paper_replace$SOURCE <- factor(paper_replace$SOURCE, levels = c("PubMed","Medline","Cochrane","Scopus"))
+paper_replace <- paper_replace[order(paper_replace$SOURCE),]
+
+#slice()取DOI值重複的第一筆文獻
+paper <- paper_replace %>% group_by(DOI) %>% slice(1) %>%  ungroup 
+saveRDS(paper,"paper.rds")
+```

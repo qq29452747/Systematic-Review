@@ -1,0 +1,55 @@
+---
+title: "Abstract Screening & PRISMA Flow Diagram"
+author: "Cathy Huang"
+date: "2018年7月28日"
+output: html_document
+---
+
+Abstract Screening是指依照文獻的標題、摘要，篩選這份文獻是否符合研究的主題。
+
+PRISMA流程圖，是將「系統性文獻回顧」的步驟以流程圖呈現。
+
+1. 使用metagear package進行Abstract Screening，PRISMAstatement package繪製流程圖。
+```{r, message=FALSE, warning=FALSE }
+require(metagear)
+require(PRISMAstatement)
+```
+
+2. 繪製PRISMA流程圖。
+```{r, warning=FALSE}
+phases <- c("START_PHASE: 107 of studies through PubMed database searching",
+            "START_PHASE: 223 of studies through other sources",
+            "210 of studies after duplicates removed",
+            "# of studies with title and abstract screened",
+            "EXCLUDE_PHASE: # of studies excluded",
+            "# of full-text articles assessed for eligibility",
+            "EXCLUDE_PHASE: # of full-text excluded, not fitting eligibility criteria",
+            "# of studies included in qualitative synthesis",
+            "EXCLUDE_PHASE: # studies excluded, incomplete data reported",
+            "final # of studies included in meta-analysis")
+
+plot_PRISMA(phases, colWidth = 30, excludeDistance = 0.5)
+```
+
+3. 審查文獻的標題、摘要，確認是否符合研究的主題。
+```{r, warning=FALSE}
+#輸入審查者名稱
+theTeam <- c("sch","yjt")
+
+#載入檔案
+paper <- readRDS("C:/Users/User/Documents/paper.rds")
+paperScreened <- effort_initialize(paper) 
+
+#審查者的分工方式
+paperDistribute <- effort_distribute(paperScreened, initialize = FALSE, reviewers = theTeam, 
+                                     effort = c(50, 50), save_split = TRUE) #平均分配
+
+paperTogether_1 <- effort_distribute(paperScreened, initialize = FALSE, reviewers = theTeam,
+                                     effort = c(100, 0), save_split = TRUE) #所有文獻交由第一位審查者審查
+
+paperTogether_2 <- effort_distribute(paperScreened, initialize = FALSE, reviewers = theTeam,
+                                     effort = c(20, 80), save_split = TRUE) #20%的文獻由第一位審查者審查；80%的文獻由第二位審查者審查
+
+#abstract_screener()開啟審查視窗
+abstract_screener("effort_sch.csv", aReviewer = "sch")
+```

@@ -1,0 +1,183 @@
+---
+title: "Literature Research"
+author: "Cathy Huang"
+date: "2018年7月27日"
+output: html_document
+---
+
+
+藉由 **Systematic Review** 與 **Meta-analysis** 了解「流感與橫紋肌溶解症的關聯」。
+資料庫來源分別為PubMed、Scopus、Meline以及Cochrane。
+
+搜尋條件如下：
+
+- 關鍵字：流感 與 橫紋肌溶解症或肌肉發炎、肌肉病變、肌肉萎縮症
+- 年份：2013/01/01至2018/12/31
+- 語言：英文
+
+
+
+# PubMed
+
+1. 使用RISmed與dplyr package。
+```{r, message=FALSE, warning=FALSE }
+require(RISmed)
+require(dplyr)
+```
+
+2. 輸入搜尋的關鍵字與搜尋條件，EUtilsGet()取得查詢結果。
+```{r, warning=FALSE}
+#關鍵字
+search_topic <- '(influenza|flu) and (rhabdomyolysis|muscle inflammation|myopathy|muscle atrophy)'
+
+#搜尋條件
+search_query <- EUtilsSummary(search_topic, retmax=1000, mindate="2013/01/01", maxdate="2018/12/31")
+
+#EUtilsGet()取得查詢結果
+records <- EUtilsGet(search_query)
+```
+
+3. 使用getslots()，了解文獻中每一項欄位的類型，使用者可以選擇研究需要的欄位。
+```{r, warning=FALSE}
+getSlots("Medline")
+
+pubmed_data <- data.frame('Title'=ArticleTitle(records),'Abstract'=AbstractText(records),'PMID'=PMID(records),'ELocationID'=ELocationID(records),'Language'=Language(records))
+```
+
+4. 整理PubMed文獻的表格，以方便整合各資料來源的文獻。
+```{r, warning=FALSE}
+#選擇語言為英文的文獻
+pubmed_data <- filter(pubmed_data, Language == "eng")
+pubmed_data$Language <- NULL
+
+pubmed_data$Source <- "PubMed"
+colnames(pubmed_data) <- c("TITLE","ABSTRACT","PMID","DOI","SOURCE")
+pubmed_data$ABSTRACT <- as.character(pubmed_data$ABSTRACT)
+pubmed_data$ABSTRACT <- gsub(",", " ", pubmed_data$ABSTRACT, fixed = TRUE)
+
+saveRDS(pubmed_data,"pubmed_data.rds")
+```
+
+# Scopus
+
+1. 使用Scopus網站搜尋文獻，匯出搜尋結果，檔案類型為csv檔。
+
+2. 使用readr package讀取csv檔。
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+scopus <- read_csv("C:/Users/User/Documents/Paper/scopus.csv")
+```
+
+3. 整理Scopus文獻的表格，以方便整合各資料來源的文獻。
+```{r, warning=FALSE}
+scopus <- scopus[,c("書名","摘要","PubMed ID","DOI")]
+scopus$Source <- "Scopus"
+colnames(scopus) <- c("TITLE","ABSTRACT","PMID","DOI","SOURCE")
+
+#轉換PMID的欄位類型
+scopus$PMID <- as.character(scopus$PMID)
+
+saveRDS(scopus,"scopus.rds")
+```
+
+# Medline
+
+1. 使用Medline網站搜尋文獻，匯出搜尋結果，檔案類型為xls檔。
+
+2. 使用readxl package讀取xls檔。
+```{r, message=FALSE, warning=FALSE}
+library(readxl)
+medline <- read_excel("C:/Users/User/Documents/Paper/medline.xls")
+```
+
+3. 整理Medline文獻的表格，以方便整合各資料來源的文獻。
+```{r, warning=FALSE}
+#取需要的欄位
+medline <- medline[,c("Title","Abstract","AccessionNumber","digitalObjectIdentifier")]
+medline$Source <- "Medline"
+colnames(medline) <- c("TITLE","ABSTRACT","PMID","DOI","SOURCE")
+
+#以，分割DOI欄位的值
+spilt <- strsplit(medline$DOI,split=",",fixed=T)
+
+#新增一個欄位
+doiClean <- NULL
+
+#整理DOI欄位的值
+for(i in 1:length(spilt)){  #讀取每一列
+  doiArray <- spilt[[i]]   #取子集
+  doi <- doiArray[grepl("/",doiArray)] #在子集中搜尋/
+ 
+   if(length(doi) == 0 ) { #如果長度為0，寫上NA
+     doi <- NA
+   }
+    
+  doiClean <- c(doiClean,doi) #將值代入doiClean的欄位
+}
+
+#cbind()結合medline與doiClean的欄位
+medline <- cbind(medline,doiClean)
+
+#重新取得需要的欄位
+medline$DOI <- NULL
+colnames(medline) <- c("TITLE","ABSTRACT","PMID","SOURCE","DOI")
+medline <- medline[,c("TITLE","ABSTRACT","PMID","DOI","SOURCE")]
+
+saveRDS(medline,"medline.rds")
+```
+
+# Cochrane
+
+1. 使用Cochrane網站搜尋文獻，匯出搜尋結果，檔案類型為txt檔。
+
+2. 使用readr package讀取txt檔。
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+library(data.table)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+Cochrane <- read_csv("C:/Users/User/Documents/Paper/cochrane.txt", col_names = FALSE)
+```
+
+3. 整理Cochrane文獻的表格，以方便整合各資料來源的文獻。
+```{r, warning=FALSE}
+#使用as.data.table()轉成data.table，以：分割欄位。
+Cochrane <- as.data.table(str_split_fixed(Cochrane$X1, ":", 2))
+
+#新增Record欄位
+Cochrane$Record <- "" 
+
+#整理Cochrane文獻的表格
+for(i in 1:nrow(Cochrane)){ #讀取至最後一行
+  if(grepl("Record #",Cochrane[i,])){ #如果有Record #，進入迴圈
+    startIndex<-gregexpr(pattern ='#',Cochrane[i,])[[1]][1]  #[[1]]為#在第8個位置
+    endIndex<-gregexpr(pattern =' ',Cochrane[i,])[[1]][2]   #[[1]]為空白在7.10.13，取第2個空白10
+    recordNo<-substr(Cochrane[i,],startIndex+1,endIndex-1) #擷取前後空白
+  }
+  Cochrane$Record[i]<-recordNo #此欄位為Reco編號
+}
+
+#選擇需要的欄位名稱
+Cochrane_subset <- subset(Cochrane, V1=="TI"|V1=="DOI"|V1=="PM"|V1=="AB")
+
+#長表轉寬表
+Cochrane_dcast <- dcast(Cochrane_subset, Record ~ V1, value.var="V2")
+
+#清理欄位
+Cochrane_dcast$Record <- NULL
+
+#整理PMID的值
+Cochrane_gsub <- gsub("PUBMED ", "", Cochrane_dcast$PM) 
+Cochrane_cbind <- cbind(Cochrane_dcast,Cochrane_gsub)
+Cochrane_cbind$PM <- NULL
+
+#新增資料來源
+Cochrane_cbind$SOURCE <- "Cochrane"
+Cochrane_data <- Cochrane_cbind[,c("TI", "AB", "Cochrane_gsub", "DOI","SOURCE")] 
+colnames(Cochrane_data) <- c("TITLE","ABSTRACT","PMID","DOI","SOURCE")
+
+saveRDS(Cochrane_data,"Cochrane_data.rds")
+```
